@@ -1,248 +1,261 @@
 import os
 
-from dotenv import load_dotenv
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
+from dotenv import load_dotenv
 from openai import OpenAI
 
 
-# Load environment variables
+# Load environment variables from .env locally.
+# On Render, these values will come from Render's
+# Environment Variables settings.
 load_dotenv()
+
+
+# --------------------------------------------------
+# Flask application
+# --------------------------------------------------
+
+app = Flask(__name__)
+
+# Allow the Advik-Olympiad GitHub Pages website
+# to communicate with this backend.
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://sharmaadvik116-sys.github.io"
+            ]
+        }
+    }
+)
+
+
+# --------------------------------------------------
+# OpenAI configuration
+# --------------------------------------------------
 
 api_key = os.getenv("OPENAI_API_KEY")
 vector_store_id = os.getenv("REMOTE_SENSING_VECTOR_STORE_ID")
 
-if not api_key:
-    raise ValueError("OPENAI_API_KEY was not found in .env")
 
-if not vector_store_id:
-    raise ValueError(
-        "REMOTE_SENSING_VECTOR_STORE_ID was not found in .env"
+if not api_key:
+    raise RuntimeError(
+        "OPENAI_API_KEY is not configured."
     )
 
 
-# Create OpenAI client
-client = OpenAI(api_key=api_key)
+if not vector_store_id:
+    raise RuntimeError(
+        "REMOTE_SENSING_VECTOR_STORE_ID is not configured."
+    )
 
-# Create Flask application
-app = Flask(__name__)
-CORS(app)
 
+client = OpenAI(
+    api_key=api_key
+)
+
+
+# --------------------------------------------------
+# AI Coach instructions
+# --------------------------------------------------
+
+coach_instructions = """
+You are Advik's AI Coach for Science Olympiad Remote Sensing.
+
+Your job is to help a middle-school student learn Remote Sensing.
+
+Use the Remote Sensing knowledge base available through file search
+whenever it is relevant.
+
+Teaching style:
+
+1. Explain concepts clearly and simply.
+2. Use step-by-step reasoning for calculations.
+3. Do not immediately give the answer when the student asks
+   for a practice question unless they specifically ask for the answer.
+4. When the student gives an incorrect answer:
+   - clearly say that it is incorrect,
+   - explain exactly where the mistake happened,
+   - show the correct method,
+   - then give a similar practice question.
+5. When the student is confused, explain the concept in a simpler way.
+6. Remember the conversation so follow-up questions such as
+   "what about this one?" or "give me another one" make sense.
+7. Encourage the student to try problems independently.
+8. Keep explanations appropriate for a middle-school Science Olympiad student.
+9. When calculations are involved, show the formula and the steps.
+10. Do not claim that information comes from the Science Olympiad
+    rules unless the information is actually supported by the
+    available knowledge base.
+11. If the knowledge base does not contain enough information to
+    answer a specialized Remote Sensing question, say so clearly
+    rather than inventing a rule or fact.
+"""
+
+
+# --------------------------------------------------
+# Home page
+# --------------------------------------------------
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
+# --------------------------------------------------
+# Chat API
+# --------------------------------------------------
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
 
-    data = request.get_json()
-
-    question = data.get("question", "").strip()
-    history = data.get("history", [])
-
-
-    if not question:
-        return jsonify({
-            "error": "Please enter a question."
-        }), 400
-
-
-    # Keep only valid conversation messages.
-    # This prevents unexpected data from being sent to the API.
-    clean_history = []
-
-    if isinstance(history, list):
-
-        for message in history:
-
-            if not isinstance(message, dict):
-                continue
-
-            role = message.get("role")
-            content = message.get("content")
-
-            if role not in ["user", "assistant"]:
-                continue
-
-            if not isinstance(content, str):
-                continue
-
-            content = content.strip()
-
-            if not content:
-                continue
-
-            clean_history.append({
-                "role": role,
-                "content": content
-            })
-
-
-    # Add the newest student question
-    clean_history.append({
-        "role": "user",
-        "content": question
-    })
-
-
-    coach_instructions = """
-You are Advik's AI Coach.
-
-Your current subject is Science Olympiad Remote Sensing.
-
-Your job is to help a middle-school student learn Remote Sensing
-deeply and confidently.
-
-
-KNOWLEDGE BASE
-
-You have access to Advik's Remote Sensing knowledge base.
-
-Use the knowledge base whenever it contains information relevant
-to the student's question.
-
-The knowledge base is the primary source for the Remote Sensing
-content of this coach.
-
-Do not invent facts.
-
-If the knowledge base does not contain enough information to
-answer a specific question, clearly say that the available
-knowledge base does not provide enough information rather than
-pretending that it does.
-
-
-CONVERSATION MEMORY
-
-You can see the previous messages in the current conversation.
-
-Use the previous messages to understand what the student is
-referring to.
-
-For example:
-
-Coach:
-"What is the area represented by a 20 m pixel?"
-
-Student:
-"40 m²"
-
-You should understand that "40 m²" is the student's answer
-to the previous question.
-
-Do not make the student repeat the entire question when the
-previous conversation already provides the context.
-
-
-IMPORTANT TEACHING STYLE
-
-1. Explain concepts clearly and simply.
-
-2. Use middle-school-friendly language.
-
-3. Teach the reasoning, not just the final answer.
-
-4. Use a simple example when it helps.
-
-5. Break calculations into clear steps.
-
-6. When a formula is involved:
-   - identify the formula
-   - explain what each variable means
-   - substitute the values
-   - calculate step by step
-   - state the final answer with units when appropriate
-
-7. When comparing concepts, use a small table or clear bullets.
-
-8. If the student appears confused, explain the idea in a
-   different way.
-
-9. Do not unnecessarily make answers very long.
-
-10. Use Remote Sensing terminology correctly.
-
-
-SCIENCE OLYMPIAD COACHING
-
-When appropriate, help the student practice:
-
-- concept questions
-- calculations
-- image interpretation
-- multiple-choice questions
-- application questions
-- harder follow-up questions
-
-
-PRACTICE QUESTIONS
-
-If the student asks for a practice question and specifically
-says not to give the answer, do not reveal the answer.
-
-Let the student attempt the problem first.
-
-When the student gives an answer:
-
-- determine whether it is correct
-- clearly say whether it is correct or incorrect
-- explain the reasoning
-- identify the student's likely mistake when appropriate
-- give a similar practice question when useful
-
-
-IMPORTANT ACCURACY RULE
-
-Do not claim that information is official Science Olympiad
-material unless it has actually been provided as such.
-
-Do not copy or reproduce copyrighted competition rules.
-
-Your goal is to help Advik understand the material well enough
-to solve questions independently.
-"""
-
-
     try:
 
+        data = request.get_json(silent=True) or {}
+
+
+        question = data.get(
+            "question",
+            ""
+        ).strip()
+
+
+        history = data.get(
+            "history",
+            []
+        )
+
+
+        if not question:
+
+            return jsonify({
+                "error": "Please enter a question."
+            }), 400
+
+
+        # ------------------------------------------
+        # Validate conversation history
+        # ------------------------------------------
+
+        clean_history = []
+
+
+        if isinstance(history, list):
+
+            for message in history:
+
+                if not isinstance(message, dict):
+                    continue
+
+
+                role = message.get("role")
+                content = message.get("content")
+
+
+                if role not in ["user", "assistant"]:
+                    continue
+
+
+                if not isinstance(content, str):
+                    continue
+
+
+                content = content.strip()
+
+
+                if not content:
+                    continue
+
+
+                clean_history.append({
+                    "role": role,
+                    "content": content
+                })
+
+
+        # ------------------------------------------
+        # Add the current question
+        # ------------------------------------------
+
+        clean_history.append({
+            "role": "user",
+            "content": question
+        })
+
+
+        # ------------------------------------------
+        # Ask OpenAI
+        # ------------------------------------------
+
         response = client.responses.create(
+
             model="gpt-5",
+
             instructions=coach_instructions,
+
             input=clean_history,
+
             tools=[
                 {
                     "type": "file_search",
-                    "vector_store_ids": [vector_store_id]
+                    "vector_store_ids": [
+                        vector_store_id
+                    ]
                 }
             ]
         )
 
 
+        answer = response.output_text
+
+
+        if not answer:
+
+            answer = (
+                "I could not generate an answer. "
+                "Please try asking the question again."
+            )
+
+
         return jsonify({
-            "answer": response.output_text
+            "answer": answer
         })
 
 
-    except Exception as e:
+    except Exception as error:
 
-        print()
-        print("=" * 60)
-        print("OPENAI ERROR")
-        print("=" * 60)
-        print(repr(e))
-        print("=" * 60)
-        print()
+        print(
+            "AI Coach error:",
+            repr(error)
+        )
+
 
         return jsonify({
-            "error": str(e)
+            "error": (
+                "The AI Coach encountered an error. "
+                "Please try again."
+            )
         }), 500
 
 
+# --------------------------------------------------
+# Production server
+# --------------------------------------------------
+
 if __name__ == "__main__":
 
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
+
     app.run(
-        debug=True,
-        port=5000
+        host="0.0.0.0",
+        port=port,
+        debug=False
     )
