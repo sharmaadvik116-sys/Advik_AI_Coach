@@ -244,12 +244,12 @@
                         Remote Sensing
                     </option>
 
-                    <option value="thermodynamics">
-                        Thermodynamics
+                    <option value="thermodynamics" disabled>
+                        Thermodynamics — Coming Soon
                     </option>
 
-                    <option value="hovercraft">
-                        Hovercraft
+                    <option value="hovercraft" disabled>
+                        Hovercraft — Coming Soon
                     </option>
 
                 </select>
@@ -306,14 +306,18 @@
     const questionInput =
         document.getElementById("questionInput");
 
+
     const askButton =
         document.getElementById("askButton");
+
 
     const chatArea =
         document.getElementById("chatArea");
 
+
     const status =
         document.getElementById("status");
+
 
     const eventSelect =
         document.getElementById("eventSelect");
@@ -321,9 +325,8 @@
 
     // Stores the conversation in the browser.
     //
-    // IMPORTANT:
-    // The current question is NOT added here until
-    // after the server successfully answers it.
+    // The current question is not added here
+    // until after the server successfully answers it.
     //
     // This prevents the newest question from being
     // sent twice to the backend.
@@ -333,7 +336,8 @@
 
     function escapeHtml(text) {
 
-        const div = document.createElement("div");
+        const div =
+            document.createElement("div");
 
         div.textContent = text;
 
@@ -426,10 +430,6 @@
         }
 
 
-        // Save the current question separately.
-        //
-        // We send the OLD history to the backend.
-        // app.py will then add the newest question.
         const currentQuestion =
             question;
 
@@ -504,8 +504,8 @@
             );
 
 
-            // Now that the answer was successful,
-            // store both messages for the next question.
+            // Store both messages only after
+            // the AI successfully responds.
 
             conversationHistory.push({
 
@@ -528,8 +528,8 @@
             // Keep the browser history from growing
             // indefinitely.
             //
-            // 20 messages = approximately 10
-            // question/answer exchanges.
+            // 20 messages = approximately
+            // 10 question/answer exchanges.
 
             if (conversationHistory.length > 20) {
 
@@ -603,9 +603,6 @@
                 eventSelect.value;
 
 
-            // For now, only Remote Sensing
-            // is connected to the knowledge base.
-
             if (
                 selectedEvent ===
                 "remote-sensing"
@@ -613,11 +610,6 @@
 
                 status.textContent =
                     "Remote Sensing AI Coach is ready.";
-
-            } else {
-
-                status.textContent =
-                    "This event will be connected to the AI Coach next.";
 
             }
 
